@@ -285,7 +285,7 @@ def show_login_page():
                 else:
                     st.error("Invalid username or password")
         
-        st.info("**Admin Credentials:** Username: admin, Password: admin")
+     
         
         with st.expander("📝 Register New Account"):
             with st.form("register_form"):
