@@ -1,159 +1,121 @@
 import streamlit as st
-import psycopg2
+import sqlite3
 import hashlib
 import pandas as pd
 from datetime import datetime, timedelta
 import time
 import uuid
-import os # For environment variables, though we'll primarily use st.secrets
 
 # Database setup and initialization
 def init_database():
-    try:
-        # Get database URL from Streamlit secrets or environment variable
-        db_url = st.secrets["DATABASE_URL"]
-        conn = psycopg2.connect(db_url)
-        c = conn.cursor()
-        
-        # Users table
-        c.execute('''CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            full_name TEXT NOT NULL,
-            phone TEXT,
-            user_type TEXT DEFAULT 'customer',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        # Vendors table
-        c.execute('''CREATE TABLE IF NOT EXISTS vendors (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            description TEXT,
-            location TEXT NOT NULL,
-            contact_phone TEXT,
-            contact_email TEXT,
-            operating_hours TEXT,
-            rating REAL DEFAULT 0.0,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
-        
-        # Food items table
-        c.execute('''CREATE TABLE IF NOT EXISTS food_items (
-            id SERIAL PRIMARY KEY,
-            vendor_id INTEGER,
-            name TEXT NOT NULL,
-            description TEXT,
-            price REAL NOT NULL,
-            category TEXT,
-            image_url TEXT,
-            is_available BOOLEAN DEFAULT TRUE,
-            preparation_time INTEGER DEFAULT 15,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (vendor_id) REFERENCES vendors (id)
-        )''')
-        
-        # Orders table
-        c.execute('''CREATE TABLE IF NOT EXISTS orders (
-            id SERIAL PRIMARY KEY,
-            order_number TEXT UNIQUE NOT NULL,
-            customer_id INTEGER,
-            vendor_id INTEGER,
-            total_amount REAL NOT NULL,
-            status TEXT DEFAULT 'pending',
-            delivery_location TEXT,
-            special_instructions TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (customer_id) REFERENCES users (id),
-            FOREIGN KEY (vendor_id) REFERENCES vendors (id)
-        )''')
-        
-        # Order items table
-        c.execute('''CREATE TABLE IF NOT EXISTS order_items (
-            id SERIAL PRIMARY KEY,
-            order_id INTEGER,
-            food_item_id INTEGER,
-            quantity INTEGER NOT NULL,
-            unit_price REAL NOT NULL,
-            subtotal REAL NOT NULL,
-            FOREIGN KEY (order_id) REFERENCES orders (id),
-            FOREIGN KEY (food_item_id) REFERENCES food_items (id)
-        )''')
-        
-        # Insert default admin user if not exists
-        admin_password = hashlib.sha256("admin".encode()).hexdigest()
-        c.execute("SELECT id FROM users WHERE username = %s", ("admin",))
-        if not c.fetchone():
-            c.execute('''INSERT INTO users (username, password, email, full_name, user_type) 
-                         VALUES (%s, %s, %s, %s, %s)''', 
-                      ("admin", admin_password, "admin@fss.edu.ng", "System Administrator", "admin"))
-            st.success("Default admin user created.")
-        
-        # Insert sample vendors if not exists
-        sample_vendors = [
-            ("Campus Cafeteria", "Main campus dining hall", "Block A, Ground Floor", "08012345678", "cafeteria@fss.edu.ng", "7:00 AM - 9:00 PM"),
-            ("Quick Bites", "Fast food and snacks", "Student Center", "08098765432", "quickbites@fss.edu.ng", "8:00 AM - 8:00 PM"),
-            ("Healthy Meals", "Nutritious and organic food", "Faculty Building", "08055566677", "healthy@fss.edu.ng", "9:00 AM - 6:00 PM")
-        ]
-        
-        for vendor in sample_vendors:
-            c.execute("SELECT id FROM vendors WHERE name = %s", (vendor[0],))
-            if not c.fetchone():
-                c.execute('''INSERT INTO vendors (name, description, location, contact_phone, contact_email, operating_hours) 
-                            VALUES (%s, %s, %s, %s, %s, %s)''', vendor)
-                st.success(f"Sample vendor '{vendor[0]}' inserted.")
-        
-        # Insert sample food items if not exists
-        sample_foods = [
-            ("Jollof Rice", "Spicy Nigerian rice dish", 800.00, "Main Course", "", True, 20, "Campus Cafeteria"),
-            ("Fried Rice", "Delicious fried rice with vegetables", 750.00, "Main Course", "", True, 18, "Campus Cafeteria"),
-            ("Chicken Stew", "Tender chicken in tomato stew", 1200.00, "Main Course", "", True, 25, "Campus Cafeteria"),
-            ("Meat Pie", "Savory pastry with meat filling", 200.00, "Snacks", "", True, 5, "Quick Bites"),
-            ("Sausage Roll", "Crispy pastry with sausage", 150.00, "Snacks", "", True, 5, "Quick Bites"),
-            ("Soft Drinks", "Assorted soft drinks", 100.00, "Beverages", "", True, 2, "Quick Bites"),
-            ("Grilled Fish", "Fresh grilled fish with vegetables", 1500.00, "Main Course", "", True, 30, "Healthy Meals"),
-            ("Vegetable Salad", "Fresh mixed vegetable salad", 600.00, "Salads", "", True, 10, "Healthy Meals"),
-            ("Fruit Juice", "Fresh fruit juice", 300.00, "Beverages", "", True, 5, "Healthy Meals")
-        ]
-        
-        for food in sample_foods:
-            food_name, description, price, category, image_url, is_available, prep_time, vendor_name = food
-            c.execute("SELECT id FROM food_items WHERE name = %s", (food_name,))
-            if not c.fetchone():
-                c.execute("SELECT id FROM vendors WHERE name = %s", (vendor_name,))
-                vendor_id_row = c.fetchone()
-                if vendor_id_row:
-                    vendor_id = vendor_id_row[0]
-                    c.execute('''INSERT INTO food_items (vendor_id, name, description, price, category, image_url, is_available, preparation_time) 
-                                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''', 
-                              (vendor_id, food_name, description, price, category, image_url, is_available, prep_time))
-                    st.success(f"Sample food item '{food_name}' inserted for '{vendor_name}'.")
-
-        conn.commit()
-        conn.close()
-        st.success("Database initialized successfully!")
-    except Exception as e:
-        st.error(f"Error initializing database: {e}")
-        st.info("Please ensure your DATABASE_URL secret is correctly configured and the database is accessible.")
-        # If initialization fails, prevent app from proceeding
-        st.stop()
-
-
-# Helper function to get a database connection
-@st.cache_resource
-def get_db_connection():
-    try:
-        db_url = st.secrets["DATABASE_URL"]
-        conn = psycopg2.connect(db_url)
-        return conn
-    except Exception as e:
-        st.error(f"Failed to connect to database: {e}")
-        st.info("Please ensure your DATABASE_URL secret is correctly configured.")
-        st.stop()
+    conn = sqlite3.connect('campus_food_system.db')
+    c = conn.cursor()
+    
+    # Users table
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        full_name TEXT NOT NULL,
+        phone TEXT,
+        user_type TEXT DEFAULT 'customer',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Vendors table
+    c.execute('''CREATE TABLE IF NOT EXISTS vendors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        location TEXT NOT NULL,
+        contact_phone TEXT,
+        contact_email TEXT,
+        operating_hours TEXT,
+        rating REAL DEFAULT 0.0,
+        is_active BOOLEAN DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )''')
+    
+    # Food items table
+    c.execute('''CREATE TABLE IF NOT EXISTS food_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        vendor_id INTEGER,
+        name TEXT NOT NULL,
+        description TEXT,
+        price REAL NOT NULL,
+        category TEXT,
+        image_url TEXT,
+        is_available BOOLEAN DEFAULT 1,
+        preparation_time INTEGER DEFAULT 15,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (vendor_id) REFERENCES vendors (id)
+    )''')
+    
+    # Orders table
+    c.execute('''CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_number TEXT UNIQUE NOT NULL,
+        customer_id INTEGER,
+        vendor_id INTEGER,
+        total_amount REAL NOT NULL,
+        status TEXT DEFAULT 'pending',
+        delivery_location TEXT,
+        special_instructions TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES users (id),
+        FOREIGN KEY (vendor_id) REFERENCES vendors (id)
+    )''')
+    
+    # Order items table
+    c.execute('''CREATE TABLE IF NOT EXISTS order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER,
+        food_item_id INTEGER,
+        quantity INTEGER NOT NULL,
+        unit_price REAL NOT NULL,
+        subtotal REAL NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders (id),
+        FOREIGN KEY (food_item_id) REFERENCES food_items (id)
+    )''')
+    
+    # Insert default admin user
+    admin_password = hashlib.sha256("admin".encode()).hexdigest()
+    c.execute('''INSERT OR IGNORE INTO users (username, password, email, full_name, user_type) 
+                 VALUES (?, ?, ?, ?, ?)''', 
+              ("admin", admin_password, "admin@fss.edu.ng", "System Administrator", "admin"))
+    
+    # Insert sample vendors
+    sample_vendors = [
+        ("Campus Cafeteria", "Main campus dining hall", "Block A, Ground Floor", "08012345678", "cafeteria@fss.edu.ng", "7:00 AM - 9:00 PM"),
+        ("Quick Bites", "Fast food and snacks", "Student Center", "08098765432", "quickbites@fss.edu.ng", "8:00 AM - 8:00 PM"),
+        ("Healthy Meals", "Nutritious and organic food", "Faculty Building", "08055566677", "healthy@fss.edu.ng", "9:00 AM - 6:00 PM")
+    ]
+    
+    for vendor in sample_vendors:
+        c.execute('''INSERT OR IGNORE INTO vendors (name, description, location, contact_phone, contact_email, operating_hours) 
+                    VALUES (?, ?, ?, ?, ?, ?)''', vendor)
+    
+    # Insert sample food items
+    sample_foods = [
+        (1, "Jollof Rice", "Spicy Nigerian rice dish", 800.00, "Main Course", "", 1, 20),
+        (1, "Fried Rice", "Delicious fried rice with vegetables", 750.00, "Main Course", "", 1, 18),
+        (1, "Chicken Stew", "Tender chicken in tomato stew", 1200.00, "Main Course", "", 1, 25),
+        (2, "Meat Pie", "Savory pastry with meat filling", 200.00, "Snacks", "", 1, 5),
+        (2, "Sausage Roll", "Crispy pastry with sausage", 150.00, "Snacks", "", 1, 5),
+        (2, "Soft Drinks", "Assorted soft drinks", 100.00, "Beverages", "", 1, 2),
+        (3, "Grilled Fish", "Fresh grilled fish with vegetables", 1500.00, "Main Course", "", 1, 30),
+        (3, "Vegetable Salad", "Fresh mixed vegetable salad", 600.00, "Salads", "", 1, 10),
+        (3, "Fruit Juice", "Fresh fruit juice", 300.00, "Beverages", "", 1, 5)
+    ]
+    
+    for food in sample_foods:
+        c.execute('''INSERT OR IGNORE INTO food_items (vendor_id, name, description, price, category, image_url, is_available, preparation_time) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', food)
+    
+    conn.commit()
+    conn.close()
 
 # Authentication functions
 def hash_password(password):
@@ -163,9 +125,9 @@ def verify_password(password, hashed):
     return hash_password(password) == hashed
 
 def authenticate_user(username, password):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     c = conn.cursor()
-    c.execute("SELECT id, username, password, user_type, full_name FROM users WHERE username = %s", (username,))
+    c.execute("SELECT id, username, password, user_type, full_name FROM users WHERE username = ?", (username,))
     user = c.fetchone()
     conn.close()
     
@@ -175,42 +137,42 @@ def authenticate_user(username, password):
 
 # Database query functions
 def get_vendors():
-    conn = get_db_connection()
-    df = pd.read_sql_query("SELECT * FROM vendors WHERE is_active = TRUE", conn)
+    conn = sqlite3.connect('campus_food_system.db')
+    df = pd.read_sql_query("SELECT * FROM vendors WHERE is_active = 1", conn)
     conn.close()
     return df
 
 def get_food_items(vendor_id=None):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     if vendor_id:
         query = """SELECT fi.*, v.name as vendor_name 
                    FROM food_items fi 
                    JOIN vendors v ON fi.vendor_id = v.id 
-                   WHERE fi.vendor_id = %s AND fi.is_available = TRUE"""
+                   WHERE fi.vendor_id = ? AND fi.is_available = 1"""
         df = pd.read_sql_query(query, conn, params=(vendor_id,))
     else:
         query = """SELECT fi.*, v.name as vendor_name 
                    FROM food_items fi 
                    JOIN vendors v ON fi.vendor_id = v.id 
-                   WHERE fi.is_available = TRUE"""
+                   WHERE fi.is_available = 1"""
         df = pd.read_sql_query(query, conn)
     conn.close()
     return df
 
 def search_food_items(search_term):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     query = """SELECT fi.*, v.name as vendor_name 
                FROM food_items fi 
                JOIN vendors v ON fi.vendor_id = v.id 
-               WHERE (fi.name ILIKE %s OR fi.description ILIKE %s OR v.name ILIKE %s) 
-               AND fi.is_available = TRUE""" # ILIKE for case-insensitive search
+               WHERE (fi.name LIKE ? OR fi.description LIKE ? OR v.name LIKE ?) 
+               AND fi.is_available = 1"""
     search_pattern = f"%{search_term}%"
     df = pd.read_sql_query(query, conn, params=(search_pattern, search_pattern, search_pattern))
     conn.close()
     return df
 
 def create_order(customer_id, vendor_id, items, total_amount, delivery_location, special_instructions=""):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     c = conn.cursor()
     
     # Generate unique order number
@@ -218,15 +180,15 @@ def create_order(customer_id, vendor_id, items, total_amount, delivery_location,
     
     # Insert order
     c.execute('''INSERT INTO orders (order_number, customer_id, vendor_id, total_amount, delivery_location, special_instructions) 
-                 VALUES (%s, %s, %s, %s, %s, %s) RETURNING id''', 
+                 VALUES (?, ?, ?, ?, ?, ?)''', 
               (order_number, customer_id, vendor_id, total_amount, delivery_location, special_instructions))
     
-    order_id = c.fetchone()[0] # Get the returned ID
+    order_id = c.lastrowid
     
     # Insert order items
     for item in items:
         c.execute('''INSERT INTO order_items (order_id, food_item_id, quantity, unit_price, subtotal) 
-                    VALUES (%s, %s, %s, %s, %s)''', 
+                    VALUES (?, ?, ?, ?, ?)''', 
                   (order_id, item['id'], item['quantity'], item['price'], item['subtotal']))
     
     conn.commit()
@@ -234,13 +196,13 @@ def create_order(customer_id, vendor_id, items, total_amount, delivery_location,
     return order_number
 
 def get_orders(customer_id=None):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     if customer_id:
         query = """SELECT o.*, v.name as vendor_name, u.full_name as customer_name
                    FROM orders o 
                    JOIN vendors v ON o.vendor_id = v.id 
                    JOIN users u ON o.customer_id = u.id
-                   WHERE o.customer_id = %s 
+                   WHERE o.customer_id = ? 
                    ORDER BY o.created_at DESC"""
         df = pd.read_sql_query(query, conn, params=(customer_id,))
     else:
@@ -254,19 +216,19 @@ def get_orders(customer_id=None):
     return df
 
 def get_order_details(order_id):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     query = """SELECT oi.*, fi.name as food_name, fi.description
                FROM order_items oi
                JOIN food_items fi ON oi.food_item_id = fi.id
-               WHERE oi.order_id = %s"""
+               WHERE oi.order_id = ?"""
     df = pd.read_sql_query(query, conn, params=(order_id,))
     conn.close()
     return df
 
 def update_order_status(order_id, status):
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     c = conn.cursor()
-    c.execute("UPDATE orders SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (status, order_id))
+    c.execute("UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (status, order_id))
     conn.commit()
     conn.close()
 
@@ -278,7 +240,7 @@ def main():
         layout="wide"
     )
     
-    # Initialize database (creates tables and inserts sample data if they don't exist)
+    # Initialize database
     init_database()
     
     # Session state initialization
@@ -342,19 +304,17 @@ def show_login_page():
                         st.error("Please fill in all required fields")
                     else:
                         try:
-                            conn = get_db_connection()
+                            conn = sqlite3.connect('campus_food_system.db')
                             c = conn.cursor()
                             hashed_password = hash_password(reg_password)
                             c.execute('''INSERT INTO users (username, password, email, full_name, phone) 
-                                         VALUES (%s, %s, %s, %s, %s)''', 
+                                         VALUES (?, ?, ?, ?, ?)''', 
                                       (reg_username, hashed_password, reg_email, reg_full_name, reg_phone))
                             conn.commit()
                             conn.close()
                             st.success("Account created successfully! Please login.")
-                        except psycopg2.errors.UniqueViolation:
+                        except sqlite3.IntegrityError:
                             st.error("Username or email already exists")
-                        except Exception as e:
-                            st.error(f"Error creating account: {e}")
 
 def show_admin_dashboard():
     st.sidebar.title(f"👨‍💼 Admin Panel")
@@ -386,11 +346,11 @@ def show_admin_dashboard_stats():
     st.header("📊 System Overview")
     
     # Get statistics
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     
     # Total counts
     total_users = pd.read_sql_query("SELECT COUNT(*) as count FROM users WHERE user_type != 'admin'", conn).iloc[0]['count']
-    total_vendors = pd.read_sql_query("SELECT COUNT(*) as count FROM vendors WHERE is_active = TRUE", conn).iloc[0]['count']
+    total_vendors = pd.read_sql_query("SELECT COUNT(*) as count FROM vendors WHERE is_active = 1", conn).iloc[0]['count']
     total_orders = pd.read_sql_query("SELECT COUNT(*) as count FROM orders", conn).iloc[0]['count']
     total_revenue = pd.read_sql_query("SELECT COALESCE(SUM(total_amount), 0) as revenue FROM orders WHERE status != 'cancelled'", conn).iloc[0]['revenue']
     
@@ -447,19 +407,15 @@ def show_vendor_management():
             
             if st.form_submit_button("Add Vendor"):
                 if name and location:
-                    conn = get_db_connection()
+                    conn = sqlite3.connect('campus_food_system.db')
                     c = conn.cursor()
-                    try:
-                        c.execute('''INSERT INTO vendors (name, description, location, contact_phone, contact_email, operating_hours) 
-                                     VALUES (%s, %s, %s, %s, %s, %s)''', 
-                                  (name, description, location, phone, email, hours))
-                        conn.commit()
-                        st.success("Vendor added successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error adding vendor: {e}")
-                    finally:
-                        conn.close()
+                    c.execute('''INSERT INTO vendors (name, description, location, contact_phone, contact_email, operating_hours) 
+                                 VALUES (?, ?, ?, ?, ?, ?)''', 
+                              (name, description, location, phone, email, hours))
+                    conn.commit()
+                    conn.close()
+                    st.success("Vendor added successfully!")
+                    st.rerun()
                 else:
                     st.error("Name and location are required")
 
@@ -494,19 +450,15 @@ def show_food_management():
             
             if st.form_submit_button("Add Food Item"):
                 if name and price > 0:
-                    conn = get_db_connection()
+                    conn = sqlite3.connect('campus_food_system.db')
                     c = conn.cursor()
-                    try:
-                        c.execute('''INSERT INTO food_items (vendor_id, name, description, price, category, preparation_time) 
-                                     VALUES (%s, %s, %s, %s, %s, %s)''', 
-                                  (vendor_id, name, description, price, category, prep_time))
-                        conn.commit()
-                        st.success("Food item added successfully!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error adding food item: {e}")
-                    finally:
-                        conn.close()
+                    c.execute('''INSERT INTO food_items (vendor_id, name, description, price, category, preparation_time) 
+                                 VALUES (?, ?, ?, ?, ?, ?)''', 
+                              (vendor_id, name, description, price, category, prep_time))
+                    conn.commit()
+                    conn.close()
+                    st.success("Food item added successfully!")
+                    st.rerun()
                 else:
                     st.error("Name and valid price are required")
 
@@ -558,7 +510,7 @@ def show_order_management():
 def show_user_management():
     st.header("👥 User Management")
     
-    conn = get_db_connection()
+    conn = sqlite3.connect('campus_food_system.db')
     users = pd.read_sql_query("SELECT id, username, email, full_name, phone, user_type, created_at FROM users", conn)
     conn.close()
     
@@ -732,7 +684,7 @@ def show_cart_page():
         st.warning("⚠️ You have items from multiple vendors. Please place separate orders for each vendor.")
     
     for vendor_id, vendor_info in vendors_in_cart.items():
-        st.subheader(f"� {vendor_info['name']}")
+        st.subheader(f"🏪 {vendor_info['name']}")
         
         # Display cart items
         for item in vendor_info['items']:
@@ -833,4 +785,3 @@ def show_customer_orders():
 
 if __name__ == "__main__":
     main()
-
