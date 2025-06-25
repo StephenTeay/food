@@ -549,7 +549,7 @@ def show_customer_dashboard():
     if st.session_state.page == 'cart':
         show_cart_page()
     else:
-        st.session_state.page = 'main'
+        # Removed: st.session_state.page = 'main'
         tab1, tab2, tab3 = st.tabs(["🍽️ Browse Food", "🔍 Search", "📋 My Orders"])
         
         with tab1:
@@ -593,7 +593,7 @@ def show_browse_food():
                             if quantity > 0:
                                 add_to_cart(item, quantity)
                                 st.success(f"Added {quantity}x {item['name']} to cart!")
-                                st.rerun() # Removed time.sleep()
+                                st.rerun() 
                             else:
                                 st.warning("Please select quantity")
             else:
@@ -614,7 +614,7 @@ def show_search_food():
             for i, (idx, item) in enumerate(results.iterrows()):
                 with cols[i % 3]:
                     st.subheader(item['name'])
-                    st.write(f"� {item['vendor_name']}")
+                    st.write(f"🏪 {item['vendor_name']}")
                     st.write(item['description'])
                     st.write(f"💰 **₦{item['price']:,.2f}**")
                     st.write(f"⏱️ {item['preparation_time']} mins")
@@ -625,7 +625,7 @@ def show_search_food():
                         if quantity > 0:
                             add_to_cart(item, quantity)
                             st.success(f"Added {quantity}x {item['name']} to cart!")
-                            st.rerun() # Removed time.sleep()
+                            st.rerun() 
                         else:
                             st.warning("Please select quantity")
         else:
@@ -712,14 +712,14 @@ def show_cart_page():
                     # Update quantity and subtotal directly in the cart item
                     item['quantity'] = new_quantity
                     item['subtotal'] = item['price'] * new_quantity
-                    st.rerun() # Rerun to update totals
+                    st.rerun() 
             with col4:
                 st.write(f"₦{item['subtotal']:,.2f}")
             with col5:
                 if st.button("Remove", key=f"remove_{item['id']}"):
                     st.session_state.cart.remove(item)
                     st.success(f"{item['name']} removed from cart.")
-                    st.rerun() # Removed time.sleep()
+                    st.rerun() 
         
         st.markdown("---")
         st.markdown(f"**Vendor Total: ₦{vendor_info['total']:,.2f}**")
@@ -746,7 +746,7 @@ def show_cart_page():
                         if cart_item['vendor_id'] != vendor_id
                     ]
                     st.session_state.page = 'orders'
-                    st.rerun() # Removed time.sleep()
+                    st.rerun() 
                 except Exception as e:
                     st.error(f"Error placing order: {e}")
             else:
@@ -784,7 +784,7 @@ def show_customer_orders():
                     if st.button("Cancel Order", key=f"cancel_order_{order['id']}"):
                         update_order_status(order['id'], 'cancelled')
                         st.success(f"Order #{order['order_number']} has been cancelled.")
-                        st.rerun() # Removed time.sleep()
+                        st.rerun() 
     else:
         st.info("You haven't placed any orders yet.")
 
