@@ -3,8 +3,8 @@ import sqlite3
 import hashlib
 import pandas as pd
 from datetime import datetime, timedelta
-import time
 import uuid
+import os # No longer primarily using for secrets, but good to keep if needed
 
 # Database setup and initialization
 def init_database():
@@ -285,7 +285,7 @@ def show_login_page():
                 else:
                     st.error("Invalid username or password")
         
-     
+        st.info("**Admin Credentials:** Username: admin, Password: admin")
         
         with st.expander("📝 Register New Account"):
             with st.form("register_form"):
@@ -593,8 +593,7 @@ def show_browse_food():
                             if quantity > 0:
                                 add_to_cart(item, quantity)
                                 st.success(f"Added {quantity}x {item['name']} to cart!")
-                                time.sleep(1)
-                                st.rerun()
+                                st.rerun() # Removed time.sleep()
                             else:
                                 st.warning("Please select quantity")
             else:
@@ -615,7 +614,7 @@ def show_search_food():
             for i, (idx, item) in enumerate(results.iterrows()):
                 with cols[i % 3]:
                     st.subheader(item['name'])
-                    st.write(f"🏪 {item['vendor_name']}")
+                    st.write(f"� {item['vendor_name']}")
                     st.write(item['description'])
                     st.write(f"💰 **₦{item['price']:,.2f}**")
                     st.write(f"⏱️ {item['preparation_time']} mins")
@@ -626,8 +625,7 @@ def show_search_food():
                         if quantity > 0:
                             add_to_cart(item, quantity)
                             st.success(f"Added {quantity}x {item['name']} to cart!")
-                            time.sleep(1)
-                            st.rerun()
+                            st.rerun() # Removed time.sleep()
                         else:
                             st.warning("Please select quantity")
         else:
@@ -645,11 +643,19 @@ def add_to_cart(item, quantity):
     }
     
     # Check if item already in cart
-    existing_item = next((x for x in st.session_state.cart if x['id'] == item['id']), None)
-    if existing_item:
-        existing_item['quantity'] += quantity
-        existing_item['subtotal'] = existing_item['price'] * existing_item['quantity']
+    existing_item_index = -1
+    for i, x in enumerate(st.session_state.cart):
+        if x['id'] == item['id']:
+            existing_item_index = i
+            break
+
+    if existing_item_index != -1:
+        # Update existing item's quantity and subtotal
+        st.session_state.cart[existing_item_index]['quantity'] += quantity
+        st.session_state.cart[existing_item_index]['subtotal'] = \
+            st.session_state.cart[existing_item_index]['price'] * st.session_state.cart[existing_item_index]['quantity']
     else:
+        # Add new item to cart
         st.session_state.cart.append(cart_item)
 
 def show_cart_page():
@@ -703,6 +709,7 @@ def show_cart_page():
                     key=f"cart_qty_{item['id']}"
                 )
                 if new_quantity != item['quantity']:
+                    # Update quantity and subtotal directly in the cart item
                     item['quantity'] = new_quantity
                     item['subtotal'] = item['price'] * new_quantity
                     st.rerun() # Rerun to update totals
@@ -712,8 +719,7 @@ def show_cart_page():
                 if st.button("Remove", key=f"remove_{item['id']}"):
                     st.session_state.cart.remove(item)
                     st.success(f"{item['name']} removed from cart.")
-                    time.sleep(0.5)
-                    st.rerun()
+                    st.rerun() # Removed time.sleep()
         
         st.markdown("---")
         st.markdown(f"**Vendor Total: ₦{vendor_info['total']:,.2f}**")
@@ -739,9 +745,8 @@ def show_cart_page():
                         cart_item for cart_item in st.session_state.cart 
                         if cart_item['vendor_id'] != vendor_id
                     ]
-                    time.sleep(2)
                     st.session_state.page = 'orders'
-                    st.rerun()
+                    st.rerun() # Removed time.sleep()
                 except Exception as e:
                     st.error(f"Error placing order: {e}")
             else:
@@ -779,7 +784,7 @@ def show_customer_orders():
                     if st.button("Cancel Order", key=f"cancel_order_{order['id']}"):
                         update_order_status(order['id'], 'cancelled')
                         st.success(f"Order #{order['order_number']} has been cancelled.")
-                        st.rerun()
+                        st.rerun() # Removed time.sleep()
     else:
         st.info("You haven't placed any orders yet.")
 
